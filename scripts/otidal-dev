@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+dev_dir="$project_dir/.dev"
+
+mkdir -p "$dev_dir/config" "$dev_dir/cache" "$dev_dir/runtime"
+chmod 700 "$dev_dir" "$dev_dir/config" "$dev_dir/cache" "$dev_dir/runtime"
+
+export PYTHONPATH="$project_dir/src${PYTHONPATH:+:$PYTHONPATH}"
+export XDG_CONFIG_HOME="$dev_dir/config"
+export XDG_CACHE_HOME="$dev_dir/cache"
+export XDG_RUNTIME_DIR="$dev_dir/runtime"
+
+exec python3 -m omarchy_tidal "$@"
+

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "community.otidal",
+  "name": "TIDAL",
+  "version": "0.0.1",
+  "author": "TIDAL for Omarchy contributors",
+  "description": "Search and start TIDAL playback from the Omarchy bar",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "TIDAL",
+    "description": "TIDAL search, favorites, and radio launcher",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
+
