@@ -129,7 +129,16 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰓇"
+    text: ""
+    iconComponent: Component {
+      Image {
+        anchors.fill: parent
+        fillMode: Image.PreserveAspectFit
+        asynchronous: true
+        smooth: true
+        source: Qt.resolvedUrl("tidal-mark.svg")
+      }
+    }
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.MiddleButton) {
         root.runAction(["toggle", "--json"])

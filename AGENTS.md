@@ -1,4 +1,4 @@
-# TIDAL for Omarchy — Agent Handoff
+# omarchy-tidal-bar — Agent Handoff
 
 ## Objective
 
@@ -72,7 +72,7 @@ Not yet performed:
 ## Start every continuation with
 
 ```bash
-cd /home/carl/Work/tidal-omarchy
+cd /home/carl/Work/omarchy-tidal-bar
 git status --short
 git log -1 --oneline
 PYTHONPATH=src python3 -m unittest discover -s tests -v

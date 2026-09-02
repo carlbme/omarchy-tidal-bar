@@ -1,9 +1,9 @@
-# Architecture
+# omarchy-tidal-bar — Architecture
 
 ## Product boundary
 
-The player is an independent Linux application. Omarchy integration is a thin,
-optional presentation layer rather than the owner of playback.
+omarchy-tidal-bar is an independent Linux application. Omarchy integration is a
+thin, optional presentation layer rather than the owner of playback.
 
 Target shape:
 

@@ -1,4 +1,4 @@
-# Development
+# omarchy-tidal-bar — Development
 
 ## Isolation
 
