@@ -15,43 +15,59 @@ The existing personal TIDAL CLI works and must remain untouched.
 - Never read or reuse `~/.cache/upmpdcli/tidal/pkce.credentials.json`.
 - Never read or reuse `~/.cache/tidal-cli/`.
 - Do not connect to or alter MPD, its queue, port 6600, or port 8765.
+- A private HTTP helper owned by otidal is allowed later if local DASH files
+  fail. Reusing the existing `tidal-manifest` unit is not.
 - Keep the new command named `otidal`, package named `omarchy_tidal`, and
   Omarchy plugin ID named `community.otidal`.
 - During development, use `scripts/otidal-dev`; it redirects all state beneath
   the git-ignored `.dev/` directory.
-- Do not install or enable the Omarchy plugin until live playback is proven and
-  the user authorizes installation.
+- The Omarchy plugin may be installed as a symlink for testing. Remove it
+  with `scripts/otidal-plugin-rollback`. Do not `pip install` or add pacman
+  packages for the plugin. Do not publish a git remote.
 
 ## Current state
 
-The repository is local only and currently has no GitHub remote. Initial work
-is committed as:
-
-```text
-50d3ca2 Scaffold isolated TIDAL player and Omarchy plugin
-```
+The repository is local only and currently has no GitHub remote.
 
 Implemented:
 
 - Dedicated XDG path management and project-local development paths.
+  `OTIDAL_RUNTIME_DIR` isolates sockets; `XDG_RUNTIME_DIR` stays the session
+  runtime so mpv can reach PipeWire.
 - Isolated `tidalapi` PKCE login and session loading.
 - Track search, track-ID/query resolution, and normalized metadata.
-- DASH manifest extraction and atomic private-cache writes.
-- On-demand mpv process and JSON IPC controller.
-- `login`, `search`, `play`, `toggle`, `stop`, `status`, and `doctor` commands.
+- Stream resolution that distinguishes BTS direct URLs from MPEG-DASH MPDs,
+  with quality fallback. Default quality is `LOSSLESS`. TIDAL served LOSSLESS
+  as DASH in the live gate.
+- mpv JSON IPC with lavf `https` whitelist for local DASH files, and
+  `force-media-title` instead of read-only `media-title`.
+- Persistent player process (`otidal daemon`) with Unix-socket JSON at
+  `player.sock`. `play` auto-starts it. `login`/`search`/`doctor` stay in
+  the CLI. `quit` shuts the process down.
+- In-process queue: `play` replaces, `queue` appends, `next`/`prev`, and
+  auto-advance when mpv goes idle. Streams are re-resolved per track.
+- Catalog: mixed search, favorites, album/artist/playlist expand, artwork
+  URLs. Radio starts a station from a seed and replenishes the queue.
+- MPRIS `org.mpris.MediaPlayer2.otidal` exported by the player process.
+- `login`, `search`, `favs`, `play`, `queue`, `radio`, `next`, `prev`,
+  `toggle`, `stop`, `status`, `quit`, `doctor`, and `daemon` commands.
 - Versioned JSON output for Shell integration.
-- Omarchy bar-widget/popup prototype for search and playback controls.
-- Six unit tests covering CLI shape, path isolation, and mpv IPC behavior.
+- Frozen Omarchy bar-widget/popup prototype for search and playback controls.
+- Unit tests covering CLI shape, path isolation, mpv IPC, stream sources,
+  and player IPC.
 - Omarchy manifest validation.
+
+Live gate:
+
+- Isolated login exists at `.dev/config/otidal/session.json`.
+- Search and playback of `t:56299935` (Marilyn Manson — Coma White) worked.
+- Audio reached PipeWire without MPD or port 8765.
 
 Not yet performed:
 
-- No login has been created for `otidal`.
-- No live TIDAL search or stream has been tested.
-- mpv has not been started by this project.
 - The Omarchy plugin has not been installed, loaded, or enabled.
-- Queueing, next/previous, radio, favorites, artwork, and complete MPRIS
-  metadata are not implemented.
+- Packaging / AUR is not implemented.
+- HI_RES_LOSSLESS has not been proven separately (LOSSLESS already used DASH).
 
 ## Start every continuation with
 
@@ -65,10 +81,11 @@ scripts/otidal-dev doctor
 scripts/otidal-dev status --json
 ```
 
-Expected baseline: six passing tests, valid plugin manifest, `mpv` and
-`tidalapi` available, no development login, and no player running.
+Expected baseline: unit tests passing, valid plugin manifest, `mpv` and
+`tidalapi` available, development login present, player process may or may
+not be running.
 
-## Immediate next milestone: one-track feasibility gate
+## Immediate next milestone: packaging only after daily-driver use
 
 Authentication is interactive and must be initiated by the account owner in a
 terminal:
@@ -84,7 +101,7 @@ pastes the final redirect URL into the same terminal. Credentials must land at:
 .dev/config/otidal/session.json
 ```
 
-After login, perform the smallest possible live test:
+After login, prove a direct URL first (default `OTIDAL_QUALITY=LOSSLESS`):
 
 ```bash
 scripts/otidal-dev search "an exact track query"
@@ -96,34 +113,41 @@ scripts/otidal-dev stop
 Verify all of the following before expanding scope:
 
 1. The search returns expected metadata.
-2. The generated `.dev/cache/otidal/manifests/<track-id>.mpd` is usable by mpv.
-3. Audio reaches PipeWire without MPD or a localhost HTTP server.
+2. Play reports `source.kind` `url` for LOSSLESS/HIGH (not a `.mpd` file).
+3. Audio reaches PipeWire without MPD and without the old port-8765 server.
 4. `status`, pause/toggle, and stop work across separate CLI invocations.
 5. mpv remains controllable through `.dev/runtime/otidal/mpv.sock`.
-6. `mpv-mpris` exposes the player to Omarchy's existing media service.
-7. The old `tidal` command and MPD playback remain unaffected.
+6. The old `tidal` command and MPD playback remain unaffected.
 
-If playback fails, preserve diagnostic output and determine whether the issue is
-the local-file DASH manifest, expired segment URLs, mpv/FFmpeg parsing, audio
-output, or IPC. Do not fall back to the existing CLI credentials or manifest
-server as a shortcut.
+Optional second proof, after LOSSLESS works:
+
+```bash
+OTIDAL_QUALITY=HI_RES_LOSSLESS scripts/otidal-dev play "the exact track query"
+```
+
+Expect `source.kind` `dash` and a file under
+`.dev/cache/otidal/manifests/<track-id>.mpd`. If that fails, diagnose local
+DASH vs expired segments vs mpv/FFmpeg. A private otidal HTTP helper is the
+next lever. Do not fall back to the existing CLI credentials or manifest
+server. `mpv-mpris` may be glanced at as a desktop-audio check; do not design
+identity around it.
 
 ## Work after the gate
 
-Proceed in this order:
+Proceed in this order (see `ROADMAP.md`):
 
-1. Harden mpv startup, stale-socket recovery, shutdown, and error reporting.
-2. Add a persistent queue with next/previous and automatic track transitions.
-3. Implement radio as a replenishing queue, not a fixed one-track action.
-4. Add favorites, albums, artists, and playlists behind stable JSON contracts.
-5. Add artwork and complete MPRIS metadata.
-6. Add plugin model tests and validate QML against the installed Omarchy API.
-7. Design explicit install/uninstall tooling only after the source workflow is
-   reliable; obtain user approval before installing it.
+1. Persistent player process (`otidald`) with Unix-socket JSON, session
+   ownership, mpv child, stale-socket recovery, and clean shutdown.
+2. Queue: next/previous, auto-advance, play vs append, tests on fakes.
+3. Radio as a replenishing queue; favorites, albums, artists, playlists.
+4. `org.mpris.MediaPlayer2.otidal` with real metadata/artwork.
+5. Point the Omarchy plugin at the player process, then install only with
+   user approval.
+6. Packaging only after the owner would uninstall the MPD path.
 
 Keep command contracts versioned and test fake adapters by default. Any test
-that uses the live account or changes playback must be explicit rather than part
-of the normal unit suite.
+that uses the live account or changes playback must be explicit rather than
+part of the normal unit suite.
 
 ## Architecture and policy context
 

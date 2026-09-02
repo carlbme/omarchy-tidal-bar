@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 
@@ -14,6 +14,7 @@ class TrackStatus:
     artist: str
     album: str = ""
     artwork_url: str = ""
+    quality: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +25,9 @@ class PlayerStatus:
     track: TrackStatus | None = None
     position: float = 0.0
     duration: float = 0.0
-    error: str | None = "playback backend is not implemented"
+    queue: list[TrackStatus] = field(default_factory=list)
+    index: int = -1
+    error: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

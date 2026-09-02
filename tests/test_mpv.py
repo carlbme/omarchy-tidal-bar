@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from omarchy_tidal.mpv import MpvController, PlayerUnavailable
+from omarchy_tidal.mpv import MpvController, PlayerUnavailable, mpv_launch_args
 from omarchy_tidal.paths import AppPaths
 
 
@@ -33,6 +33,16 @@ class MpvControllerTests(unittest.TestCase):
             paths = AppPaths(root / "config", root / "cache", root / "runtime")
             with self.assertRaisesRegex(PlayerUnavailable, "not running"):
                 MpvController(paths).command(["stop"])
+
+    def test_launch_args_allow_https_from_local_dash(self) -> None:
+        args = mpv_launch_args("/usr/bin/mpv", "/tmp/mpv.sock", "/tmp/mpv.log")
+        self.assertTrue(
+            any(
+                item.startswith("--demuxer-lavf-o=") and "https" in item and "[" in item
+                for item in args
+            )
+        )
+        self.assertIn("--input-ipc-server=/tmp/mpv.sock", args)
 
 
 if __name__ == "__main__":

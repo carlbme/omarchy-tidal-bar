@@ -25,9 +25,25 @@ class PathIsolationTests(unittest.TestCase):
             self.assertEqual(paths.session_file, root / "config/otidal/session.json")
             self.assertEqual(paths.manifest_dir, root / "cache/otidal/manifests")
             self.assertEqual(paths.mpv_socket, root / "runtime/otidal/mpv.sock")
+            self.assertEqual(paths.player_socket, root / "runtime/otidal/player.sock")
             for path in (paths.session_file, paths.manifest_dir, paths.mpv_socket):
                 self.assertNotIn("upmpdcli", str(path))
                 self.assertNotIn("tidal-cli", str(path))
+
+    def test_otidal_runtime_dir_does_not_steal_xdg_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = {
+                "XDG_CONFIG_HOME": str(root / "config"),
+                "XDG_CACHE_HOME": str(root / "cache"),
+                "XDG_RUNTIME_DIR": str(root / "session-runtime"),
+                "OTIDAL_RUNTIME_DIR": str(root / "otidal-runtime"),
+            }
+            with patch.dict(os.environ, environment, clear=False):
+                paths = AppPaths.from_environment()
+
+            self.assertEqual(paths.mpv_socket, root / "otidal-runtime/otidal/mpv.sock")
+            self.assertNotIn("session-runtime", str(paths.mpv_socket))
 
     def test_missing_own_session_never_falls_back(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

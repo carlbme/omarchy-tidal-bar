@@ -10,7 +10,9 @@ chmod 700 "$dev_dir" "$dev_dir/config" "$dev_dir/cache" "$dev_dir/runtime"
 export PYTHONPATH="$project_dir/src${PYTHONPATH:+:$PYTHONPATH}"
 export XDG_CONFIG_HOME="$dev_dir/config"
 export XDG_CACHE_HOME="$dev_dir/cache"
-export XDG_RUNTIME_DIR="$dev_dir/runtime"
+# Keep the session XDG_RUNTIME_DIR so mpv can reach PipeWire. Isolate only
+# otidal's sockets and pid files under the project .dev tree.
+export OTIDAL_RUNTIME_DIR="$dev_dir/runtime"
 
 exec python3 -m omarchy_tidal "$@"
 

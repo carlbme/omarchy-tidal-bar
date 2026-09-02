@@ -19,11 +19,16 @@ class AppPaths:
     @classmethod
     def from_environment(cls) -> "AppPaths":
         home = Path.home()
-        runtime_base = _xdg("XDG_RUNTIME_DIR", Path("/tmp") / f"otidal-{os.getuid()}")
+        isolated_runtime = os.environ.get("OTIDAL_RUNTIME_DIR")
+        if isolated_runtime:
+            runtime_dir = Path(isolated_runtime).expanduser() / "otidal"
+        else:
+            runtime_base = _xdg("XDG_RUNTIME_DIR", Path("/tmp") / f"otidal-{os.getuid()}")
+            runtime_dir = runtime_base / "otidal"
         return cls(
             config_dir=_xdg("XDG_CONFIG_HOME", home / ".config") / "otidal",
             cache_dir=_xdg("XDG_CACHE_HOME", home / ".cache") / "otidal",
-            runtime_dir=runtime_base / "otidal",
+            runtime_dir=runtime_dir,
         )
 
     @property
@@ -33,6 +38,10 @@ class AppPaths:
     @property
     def mpv_socket(self) -> Path:
         return self.runtime_dir / "mpv.sock"
+
+    @property
+    def player_socket(self) -> Path:
+        return self.runtime_dir / "player.sock"
 
     @property
     def manifest_dir(self) -> Path:

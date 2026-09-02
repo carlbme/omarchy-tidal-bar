@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+plugins_dir="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins"
+plugin_dst="$plugins_dir/community.otidal"
+backup_dir="$project_dir/.dev/plugin-install"
+shell_json="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/shell.json"
+
+if omarchy plugin list --json 2>/dev/null | jq -e '.[] | select(.id == "community.otidal" and .enabled == true)' >/dev/null; then
+  omarchy plugin disable community.otidal || true
+fi
+
+if [[ -e $plugin_dst || -L $plugin_dst ]]; then
+  omarchy plugin remove community.otidal --yes || rm -f "$plugin_dst"
+fi
+
+omarchy-shell shell rescanPlugins >/dev/null || true
+echo "Rolled back community.otidal. No extra packages were installed."
+if [[ -f $backup_dir/shell.json ]]; then
+  echo "Exact prior bar layout backup: $backup_dir/shell.json"
+  echo "Restore with: cp $backup_dir/shell.json $shell_json"
+fi

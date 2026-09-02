@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+here="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd -P)"
+repo="$(cd -- "$here/../.." && pwd -P)"
+
+if [[ -x "$repo/scripts/otidal-dev" ]]; then
+  exec "$repo/scripts/otidal-dev" "$@"
+fi
+
+if command -v otidal >/dev/null 2>&1; then
+  exec otidal "$@"
+fi
+
+echo "otidal: player not found" >&2
+exit 1
