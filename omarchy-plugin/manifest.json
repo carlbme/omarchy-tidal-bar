@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "community.otidal",
-  "name": "TIDAL",
+  "name": "omarchy-tidal-bar",
   "version": "0.0.1",
-  "author": "TIDAL for Omarchy contributors",
+  "author": "omarchy-tidal-bar contributors",
   "description": "Search and start TIDAL playback from the Omarchy bar",
   "kinds": [
     "bar-widget"

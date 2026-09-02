@@ -1,4 +1,4 @@
-# Roadmap
+# omarchy-tidal-bar — Roadmap
 
 Each milestone must work without reading or changing the installed personal
 TIDAL CLI. Login, search, and a basic mpv controller already exist in-tree.

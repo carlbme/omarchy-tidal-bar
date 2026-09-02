@@ -3,9 +3,9 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "omarchy-tidal"
+name = "omarchy-tidal-bar"
 version = "0.0.1"
-description = "Community-oriented TIDAL player and Omarchy integration"
+description = "omarchy-tidal-bar: unofficial local TIDAL player with optional Omarchy Shell plugin"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = ["tidalapi>=0.8.11,<0.9"]

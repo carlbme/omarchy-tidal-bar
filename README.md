@@ -1,4 +1,4 @@
-# TIDAL for Omarchy (design prototype)
+# omarchy-tidal-bar
 
 An isolated prototype for a local, unofficial TIDAL player with an optional
 Omarchy Shell integration. It does not install files, start services, read the
@@ -40,8 +40,9 @@ For live development without touching any existing TIDAL state, use
 [`scripts/otidal-dev`](scripts/otidal-dev) as described in
 [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
-This is an unofficial personal integration built on `tidalapi`. It is not
-affiliated with or endorsed by TIDAL, and its playback path is outside TIDAL's
+This is an unofficial personal community project, not affiliated with TIDAL.
+
+Playback uses the unofficial `tidalapi` package; that path is outside TIDAL's
 documented third-party playback offering.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the proposed production shape and
