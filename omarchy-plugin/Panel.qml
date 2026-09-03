@@ -131,12 +131,12 @@ Panel {
     bar: root.bar
     text: ""
     iconComponent: Component {
-      Image {
-        anchors.fill: parent
-        fillMode: Image.PreserveAspectFit
-        asynchronous: true
-        smooth: true
-        source: Qt.resolvedUrl("tidal-mark.svg")
+      Item {
+        TidalMark {
+          anchors.centerIn: parent
+          iconSize: Style.space(12)
+          color: root.barForeground
+        }
       }
     }
     onPressed: function(buttonCode) {
