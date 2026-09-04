@@ -54,6 +54,8 @@ class Player:
         self.play_queue = PlayQueue()
         self.track: dict[str, object] | None = _load_now_playing(self.paths)
         self.radio_seed_id: str | None = None
+        self.shuffle_on = False
+        self.track_favorite = False
         self._autoplay = False
         self._alive = True
         self._lock = threading.RLock()
@@ -97,6 +99,16 @@ class Player:
             return self.stop()
         if method == "toggle":
             return self.toggle()
+        if method == "shuffle":
+            enabled = params.get("enabled")
+            if enabled is None:
+                return self.set_shuffle()
+            return self.set_shuffle(bool(enabled))
+        if method == "favorite":
+            enabled = params.get("enabled")
+            if enabled is None:
+                return self.set_favorite()
+            return self.set_favorite(bool(enabled))
         if method == "pause":
             return self.pause()
         if method == "resume":
@@ -164,6 +176,8 @@ class Player:
         )
         payload = status.to_dict()
         payload["radio"] = self.radio_seed_id is not None
+        payload["shuffle"] = self.shuffle_on
+        payload["favorite"] = self.track_favorite
         payload["volume"] = float(raw.get("volume") if raw.get("volume") is not None else 1.0)
         return payload
 
@@ -172,7 +186,9 @@ class Player:
         items = self._items_from_selector(selector)
         self.play_queue.items = items
         self.play_queue.index = 0
-        return self._play_index(0)
+        result = self._play_index(0)
+        self._shuffle_if_enabled()
+        return result
 
     def enqueue(self, selector: str) -> dict[str, Any]:
         items = self._items_from_selector(selector)
@@ -186,8 +202,10 @@ class Player:
             playing = False
         if was_empty and not playing:
             result = self._play_index(0)
+            self._shuffle_if_enabled()
             result["added"] = len(items)
             return result
+        self._shuffle_if_enabled()
         return {
             "schema_version": 1,
             "state": "queued",
@@ -195,6 +213,7 @@ class Player:
             "added": len(items),
             "index": self.play_queue.index,
             "length": len(self.play_queue.items),
+            "shuffle": self.shuffle_on,
         }
 
     def radio(self, selector: str) -> dict[str, Any]:
@@ -205,9 +224,31 @@ class Player:
         self.play_queue.index = 0
         self.radio_seed_id = str(tracks[0].id)
         result = self._play_index(0)
+        self._shuffle_if_enabled()
         result["radio"] = True
         result["added"] = len(self.play_queue.items)
         return result
+
+    def set_shuffle(self, enabled: bool | None = None) -> dict[str, Any]:
+        self.shuffle_on = (not self.shuffle_on) if enabled is None else bool(enabled)
+        if self.shuffle_on:
+            self.play_queue.shuffle_remaining()
+        return self.status()
+
+    def set_favorite(self, enabled: bool | None = None) -> dict[str, Any]:
+        track_id = str((self.track or {}).get("id") or "")
+        if not track_id:
+            raise LookupError("nothing playing")
+        want = (not self.track_favorite) if enabled is None else bool(enabled)
+        if want:
+            if not self.tidal.add_favorite_track(track_id):
+                raise LookupError("could not add favorite")
+            self.track_favorite = True
+        else:
+            if not self.tidal.remove_favorite_track(track_id):
+                raise LookupError("could not remove favorite")
+            self.track_favorite = False
+        return self.status()
 
     def next_track(self) -> dict[str, Any]:
         nxt = self.play_queue.next_index()
@@ -238,11 +279,12 @@ class Player:
 
     def stop(self) -> dict[str, Any]:
         self._autoplay = False
+        self.track_favorite = False
         try:
             self.mpv.stop()
         except PlayerUnavailable:
             pass
-        return {"schema_version": 1, "state": "stopped"}
+        return {"schema_version": 1, "state": "stopped", "favorite": False}
 
     def toggle(self) -> dict[str, Any]:
         self.mpv.toggle_pause()
@@ -358,6 +400,7 @@ class Player:
         self.track = payload
         self._autoplay = True
         _save_now_playing(self.paths, payload)
+        self._refresh_favorite(str(payload["id"]))
         self._maybe_replenish_radio()
         return {
             "schema_version": 1,
@@ -366,6 +409,7 @@ class Player:
             "source": source.to_dict(),
             "index": index,
             "length": len(self.play_queue.items),
+            "favorite": self.track_favorite,
         }
 
     def _maybe_auto_advance(self) -> None:
@@ -408,13 +452,27 @@ class Player:
         except (LoginRequired, LookupError, ValueError):
             return
         known = {str(item.get("id")) for item in self.play_queue.items}
+        added = False
         for track in more:
             if track.id in known:
                 continue
             self.play_queue.append(self._payload(track))
             known.add(track.id)
+            added = True
             if len(self.play_queue.items) >= QUEUE_CAP:
                 break
+        if added:
+            self._shuffle_if_enabled()
+
+    def _shuffle_if_enabled(self) -> None:
+        if self.shuffle_on:
+            self.play_queue.shuffle_remaining()
+
+    def _refresh_favorite(self, track_id: str) -> None:
+        try:
+            self.track_favorite = bool(self.tidal.is_favorite_track(track_id))
+        except (LoginRequired, LookupError, TypeError, ValueError):
+            self.track_favorite = False
 
 
 def spawn_player(paths: AppPaths, timeout: float = 5.0) -> None:
