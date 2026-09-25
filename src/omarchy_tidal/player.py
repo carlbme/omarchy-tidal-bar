@@ -109,6 +109,8 @@ class Player:
             if enabled is None:
                 return self.set_favorite()
             return self.set_favorite(bool(enabled))
+        if method == "remove":
+            return self.remove_queue(int(params.get("index") or 0))
         if method == "pause":
             return self.pause()
         if method == "resume":
@@ -130,6 +132,8 @@ class Player:
                 except Exception:
                     pass
             return {"schema_version": 1, "state": "stopped"}
+        if method == "logout":
+            return self.logout()
         raise ValueError(f"Unknown player method {method!r}")
 
     def status(self) -> dict[str, Any]:
@@ -250,6 +254,32 @@ class Player:
             self.track_favorite = False
         return self.status()
 
+    def remove_queue(self, index: int) -> dict[str, Any]:
+        if index < 0 or index >= len(self.play_queue.items):
+            raise LookupError(f"No queue item at position {index + 1}")
+        was_current = index == self.play_queue.index
+        del self.play_queue.items[index]
+        if was_current:
+            # Removing the now-playing track stops playback.
+            self._autoplay = False
+            self.track = None
+            self.track_favorite = False
+            self.play_queue.index = -1
+            try:
+                self.mpv.stop()
+            except PlayerUnavailable:
+                pass
+            self.paths.now_playing_file.unlink(missing_ok=True)
+            return {
+                "schema_version": 1,
+                "state": "stopped",
+                "index": self.play_queue.index,
+                "length": len(self.play_queue.items),
+            }
+        if index < self.play_queue.index:
+            self.play_queue.index -= 1
+        return self.status() | {"length": len(self.play_queue.items)}
+
     def next_track(self) -> dict[str, Any]:
         nxt = self.play_queue.next_index()
         if nxt is None:
@@ -285,6 +315,28 @@ class Player:
         except PlayerUnavailable:
             pass
         return {"schema_version": 1, "state": "stopped", "favorite": False}
+
+    def logout(self) -> dict[str, Any]:
+        self._alive = False
+        self._autoplay = False
+        self.radio_seed_id = None
+        self.shuffle_on = False
+        self.track_favorite = False
+        self.play_queue.items = []
+        self.play_queue.index = 0
+        self.track = None
+        try:
+            self.mpv.stop()
+        except PlayerUnavailable:
+            pass
+        self.tidal.logout()
+        self.paths.now_playing_file.unlink(missing_ok=True)
+        if self._mpris_loop is not None:
+            try:
+                self._mpris_loop.quit()
+            except Exception:
+                pass
+        return {"schema_version": 1, "state": "stopped", "logged_in": False}
 
     def toggle(self) -> dict[str, Any]:
         self.mpv.toggle_pause()

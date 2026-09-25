@@ -36,6 +36,10 @@ class AppPaths:
         return self.config_dir / "session.json"
 
     @property
+    def login_pending_file(self) -> Path:
+        return self.runtime_dir / "login-pending.json"
+
+    @property
     def mpv_socket(self) -> Path:
         return self.runtime_dir / "mpv.sock"
 

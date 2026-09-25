@@ -69,6 +69,7 @@ class FakeMpv:
 class FakeTidal:
     def __init__(self) -> None:
         self.radio_calls = 0
+        self.logged_out = False
         self.favorite_ids = {"1", "2"}
         self.catalog = {
             "1": CatalogTrack("1", "One", "Artist", "Album", 10),
@@ -127,6 +128,9 @@ class FakeTidal:
     def remove_favorite_track(self, track_id: str) -> bool:
         self.favorite_ids.discard(str(track_id))
         return True
+
+    def logout(self) -> None:
+        self.logged_out = True
 
 
 class PlayQueueTests(unittest.TestCase):
@@ -300,6 +304,54 @@ class PlayerTests(unittest.TestCase):
     def test_handle_unknown_method(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unknown player method"):
             self.player.handle("explode")
+
+    def test_remove_future_queue_item(self) -> None:
+        self.player.play("t:1")
+        self.player.enqueue("t:2")
+        self.player.enqueue("t:3")
+        payload = self.player.handle("remove", {"index": 2})
+        self.assertEqual([item["id"] for item in self.player.play_queue.items], ["1", "2"])
+        self.assertEqual(payload["length"], 2)
+        self.assertEqual(self.player.play_queue.index, 0)
+
+    def test_remove_item_before_current_shifts_index(self) -> None:
+        self.player.play("t:1")
+        self.player.enqueue("t:2")
+        self.player.enqueue("t:3")
+        self.player.handle("next")
+        self.player.handle("remove", {"index": 0})
+        self.assertEqual(self.player.play_queue.current()["id"], "2")
+        self.assertEqual(self.player.play_queue.index, 0)
+
+    def test_remove_current_track_stops_playback(self) -> None:
+        self.player.play("t:1")
+        self.player.enqueue("t:2")
+        payload = self.player.handle("remove", {"index": 0})
+        self.assertEqual(payload["state"], "stopped")
+        self.assertIsNone(self.mpv.loaded)
+        self.assertEqual(payload["length"], 1)
+        self.assertFalse(self.player._autoplay)
+        self.assertFalse(self.paths.now_playing_file.exists())
+
+    def test_remove_unknown_position_fails(self) -> None:
+        self.player.play("t:1")
+        with self.assertRaisesRegex(LookupError, "No queue item"):
+            self.player.handle("remove", {"index": 5})
+
+    def test_logout_stops_playback_and_clears_session(self) -> None:
+        self.player.play("t:1")
+        self.player.enqueue("t:2")
+        self.player.handle("shuffle", {"enabled": True})
+        self.paths.session_file.write_text("{}", encoding="utf-8")
+        payload = self.player.handle("logout")
+        self.assertEqual(payload["state"], "stopped")
+        self.assertFalse(payload["logged_in"])
+        self.assertFalse(self.player._alive)
+        self.assertIsNone(self.mpv.loaded)
+        self.assertEqual(len(self.player.play_queue.items), 0)
+        self.assertFalse(self.player.shuffle_on)
+        self.assertFalse(self.paths.now_playing_file.exists())
+        self.assertTrue(self.player.tidal.logged_out)  # type: ignore[attr-defined]
 
 
 class IpcTests(unittest.TestCase):

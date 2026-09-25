@@ -24,8 +24,10 @@ TIDAL CLI.
    artwork, and transport. Omarchy's built-in media widget should talk to
    otidal, not to `mpv-mpris`.
 7. **Omarchy plugin** — *installed locally for testing.* Bar popup: search,
-   favorites, radio, queue, shuffle, favorite heart, playback controls.
-   Lists scroll inside a fixed popup; long titles marquee on hover. QML
+   favorites, radio, queue (with remove), shuffle, artwork favorite-heart
+   overlay, playback controls, and a two-step Login flow when logged out.
+   Full favorites list with lazy rows; long titles marquee on hover;
+   now-playing toast on track change; queue +/− membership buttons. QML
    edits need `omarchy restart shell` because the install is a symlink.
    Rollback: `scripts/otidal-plugin-rollback`. Remote is
    `origin` → `git@github.com:carlbme/omarchy-tidal-bar.git`. Pushes go to

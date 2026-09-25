@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import Quickshell
 import Quickshell.Io
 import qs.Ui
 import qs.Commons
@@ -27,6 +28,19 @@ Panel {
   property bool favoriteOn: false
   property string listMode: "none"
   property string message: "Search, play favorites, or start radio."
+  property bool statusLoaded: false
+  property bool loggedIn: false
+  readonly property bool dimmed: statusLoaded && !loggedIn
+  property string loginState: "none"
+  property string loginUrl: ""
+  property string lastToastedTrackId: ""
+  property bool statusSeen: false
+  property bool toastOpen: false
+  readonly property int rowHeight: Style.space(28)
+  readonly property int listSpacing: Style.space(4)
+  readonly property int listContentHeight: results.count > 0
+    ? Math.min(results.count * rowHeight + Math.max(0, results.count - 1) * listSpacing, Style.space(640))
+    : 0
   property var queueItems: []
   property var pendingAction: null
 
@@ -38,6 +52,29 @@ Panel {
 
   function refreshStatus() {
     if (!statusProc.running) statusProc.running = true
+  }
+
+  function barWindow() {
+    var qs = root.QsWindow
+    return qs ? qs.window : null
+  }
+
+  function noteTrackChange() {
+    if (!root.loggedIn) {
+      root.lastToastedTrackId = ""
+      root.statusSeen = false
+      return
+    }
+    if (!root.statusSeen) {
+      root.statusSeen = true
+      root.lastToastedTrackId = root.trackId
+      return
+    }
+    if (root.trackId && root.trackId !== root.lastToastedTrackId) {
+      root.lastToastedTrackId = root.trackId
+      if (!root.opened && root.visible && barWindow())
+        root.toastOpen = true
+    }
   }
 
   function runAction(args) {
@@ -54,6 +91,20 @@ Panel {
     if (payload.error) {
       root.message = payload.error
       return
+    }
+    if (payload.state === "pending") {
+      root.loginState = "pending"
+      root.loginUrl = String(payload.url || "")
+      root.message = "Log in at the URL above, then paste the 'Oops' page URL."
+      return
+    }
+    if (payload.logged_in === true) {
+      root.loggedIn = true
+      root.statusLoaded = true
+      root.loginState = "none"
+      root.loginUrl = ""
+      redirectInput.text = ""
+      root.message = "Logged in."
     }
     if (typeof payload.shuffle === "boolean") root.shuffleOn = payload.shuffle
     if (typeof payload.favorite === "boolean") root.favoriteOn = payload.favorite
@@ -85,6 +136,7 @@ Panel {
   }
 
   function search() {
+    if (!root.loggedIn) return
     var query = searchInput.text.trim()
     if (!query || searchProc.running) return
     root.message = "Searching…"
@@ -93,10 +145,29 @@ Panel {
   }
 
   function loadFavs() {
-    if (searchProc.running) return
+    if (!root.loggedIn || searchProc.running) return
     root.message = "Loading favorites…"
-    searchProc.command = root.cmd(["favs", "--limit", "12", "--json"])
+    searchProc.command = root.cmd(["favs", "--limit", "1000", "--json"])
     searchProc.running = true
+  }
+
+  function startLogin() {
+    if (!root.dimmed || root.loginState === "pending") return
+    root.message = "Log in in your browser. The code expires quickly — paste the 'Oops' page URL right away."
+    root.runAction(["login", "start", "--json"])
+  }
+
+  function finishLogin() {
+    var url = redirectInput.text.trim()
+    if (!url) return
+    root.message = "Finishing login…"
+    root.runAction(["login", "finish", "--redirect", url, "--json"])
+  }
+
+  function toggleFavorite() {
+    if (!root.loggedIn || root.trackId === "") return
+    root.favoriteOn = !root.favoriteOn
+    root.runAction(["favorite", "--json"])
   }
 
   function showQueue() {
@@ -120,7 +191,7 @@ Panel {
     root.listMode = "queue"
     root.message = items.length ? "Queue" : "Queue is empty"
     if (!wasQueue)
-      resultsFlick.contentY = 0
+      resultsList.contentY = 0
   }
 
   function playSelector(selector) {
@@ -135,6 +206,19 @@ Panel {
   function queueSelector(selector) {
     if (selector.indexOf("jump:") === 0) return
     runAction(["queue", selector, "--json"])
+  }
+
+  function queueIndexOfSelector(selector) {
+    if (selector.indexOf("t:") !== 0) return -1
+    var id = selector.slice(2)
+    for (var i = 0; i < root.queueItems.length; i++)
+      if (String(root.queueItems[i].id) === id) return i
+    return -1
+  }
+
+  function removeQueueItem(index) {
+    root.message = "Removing from queue…"
+    runAction(["remove", String(index + 1), "--json"])
   }
 
   implicitWidth: button.implicitWidth
@@ -176,7 +260,7 @@ Panel {
     contentWidth: panel.fittedContentWidth(Style.space(420))
     contentHeight: panel.fittedContentHeight(
                      header.implicitHeight
-                     + (results.count > 0 ? resultsColumn.implicitHeight + content.spacing : 0),
+                     + (results.count > 0 ? root.listContentHeight + content.spacing : 0),
                      Style.space(640))
 
     Column {
@@ -204,14 +288,54 @@ Panel {
             width: parent.width
             spacing: Style.space(4)
 
-            Text {
+            Item {
+              id: titleClip
               width: parent.width
-              text: root.trackTitle ? root.trackTitle : "TIDAL"
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.subtitle
-              font.bold: true
-              elide: Text.ElideRight
+              height: titleText.implicitHeight
+              clip: true
+              property bool hovering: false
+              readonly property bool overflowing: titleText.implicitWidth > width + 1
+
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                onEntered: titleClip.hovering = true
+                onExited: titleClip.hovering = false
+              }
+
+              Text {
+                id: titleText
+                width: parent.width
+                text: root.trackTitle ? root.trackTitle : "TIDAL"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.subtitle
+                font.bold: true
+                elide: titleClip.hovering ? Text.ElideNone : Text.ElideRight
+              }
+
+              SequentialAnimation {
+                running: titleClip.hovering && titleClip.overflowing && titleClip.width > 8
+                loops: Animation.Infinite
+                onRunningChanged: if (!running) titleText.x = 0
+
+                PauseAnimation { duration: 220 }
+                NumberAnimation {
+                  target: titleText
+                  property: "x"
+                  to: Math.min(0, titleClip.width - titleText.implicitWidth)
+                  duration: Math.max(2800, (titleText.implicitWidth - titleClip.width) * 45)
+                  easing.type: Easing.Linear
+                }
+                PauseAnimation { duration: 1100 }
+                NumberAnimation {
+                  target: titleText
+                  property: "x"
+                  to: 0
+                  duration: 700
+                  easing.type: Easing.InOutQuad
+                }
+              }
             }
 
             Row {
@@ -220,7 +344,7 @@ Panel {
 
               Text {
                 width: parent.width - queuePos.implicitWidth - (queuePos.visible ? Style.space(8) : 0)
-                text: root.trackArtist ? root.trackArtist : root.message
+                text: root.dimmed ? "" : (root.trackArtist ? root.trackArtist : root.message)
                 color: Qt.darker(root.fg, 1.35)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
@@ -255,6 +379,7 @@ Panel {
 
           Row {
             spacing: Style.space(6)
+            visible: !root.dimmed
 
             Button {
               text: "Prev"
@@ -289,14 +414,16 @@ Panel {
           Row {
             id: libraryRow
             spacing: Style.space(6)
+            visible: !root.dimmed
 
             Button {
               text: "Radio"
               bordered: true
               foreground: root.fg
               fontFamily: root.fontFamily
-              opacity: (root.trackId !== "" || searchInput.text.trim() !== "") ? 1 : 0.4
+              opacity: root.loggedIn && (root.trackId !== "" || searchInput.text.trim() !== "") ? 1 : 0.4
               onClicked: {
+                if (!root.loggedIn) return
                 var seed = root.trackId !== "" ? ("t:" + root.trackId) : searchInput.text.trim()
                 if (!seed) return
                 root.runAction(["radio", seed, "--json"])
@@ -314,29 +441,95 @@ Panel {
               bordered: true
               foreground: root.fg
               fontFamily: root.fontFamily
-              onClicked: root.showQueue()
-            }
-            Button {
-              text: ""
-              iconText: root.favoriteOn ? "󰋑" : "󰋕"
-              tooltipText: root.favoriteOn ? "Remove from favorites" : "Add to favorites"
-              bordered: true
-              selected: root.favoriteOn
-              foreground: root.fg
-              fontFamily: root.fontFamily
-              opacity: root.trackId !== "" ? 1 : 0.4
+              opacity: root.queueLength > 0 ? 1 : 0.4
               onClicked: {
-                if (root.trackId === "") return
-                root.favoriteOn = !root.favoriteOn
-                root.runAction(["favorite", "--json"])
+                if (root.queueLength === 0) return
+                root.showQueue()
               }
+            }
+          }
+
+          Column {
+            id: loginArea
+            width: parent.width
+            visible: root.dimmed
+            spacing: Style.space(6)
+
+            Row {
+              spacing: Style.space(6)
+              visible: root.loginState !== "pending"
+
+              Button {
+                text: "Login"
+                bordered: true
+                foreground: root.fg
+                fontFamily: root.fontFamily
+                onClicked: root.startLogin()
+              }
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Opens TIDAL in your browser."
+                color: Qt.darker(root.fg, 1.6)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            Column {
+              width: parent.width
+              visible: root.loginState === "pending"
+              spacing: Style.space(6)
+
+              Text {
+                width: parent.width
+                text: root.loginUrl
+                color: Qt.darker(root.fg, 1.6)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                elide: Text.ElideRight
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(6)
+
+                TextField {
+                  id: redirectInput
+                  width: parent.width - finishBtn.implicitWidth - Style.space(6)
+                  placeholderText: "Paste the full 'Oops' page URL (or just the code)"
+                  foreground: root.fg
+                  font.family: root.fontFamily
+                  onAccepted: root.finishLogin()
+                }
+                Button {
+                  id: finishBtn
+                  text: "Finish"
+                  bordered: true
+                  foreground: root.fg
+                  fontFamily: root.fontFamily
+                  opacity: redirectInput.text.trim() !== "" ? 1 : 0.4
+                  onClicked: root.finishLogin()
+                }
+              }
+            }
+
+            Text {
+              id: loginMessage
+              width: parent.width
+              visible: root.message !== ""
+              text: root.message
+              wrapMode: Text.WordWrap
+              color: Qt.darker(root.fg, 1.35)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
             }
           }
         }
 
         BorderSurface {
           id: coverFrame
-          width: Style.space(124)
+          visible: !root.dimmed
+          width: root.dimmed ? 0 : Style.space(124)
           height: Style.space(124)
           radius: Style.spacing.labelGap
           color: Style.normalFillFor(root.fg, Color.accent)
@@ -359,12 +552,44 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.displayLarge
           }
+
+          MouseArea {
+            id: coverHover
+            anchors.fill: parent
+            enabled: root.loggedIn && root.trackId !== ""
+            hoverEnabled: enabled
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: root.toggleFavorite()
+
+            Text {
+              id: heartShadow
+              x: heartIcon.x + 1
+              y: heartIcon.y + 1
+              visible: heartIcon.visible
+              text: root.favoriteOn ? "󰋑" : "󰋕"
+              color: "black"
+              opacity: 0.25
+              font.family: root.fontFamily
+              font.pixelSize: coverFrame.height * 0.75
+            }
+            Text {
+              id: heartIcon
+              anchors.centerIn: parent
+              visible: coverHover.enabled && coverHover.containsMouse
+              text: root.favoriteOn ? "󰋑" : "󰋕"
+              color: root.fg
+              opacity: 0.35
+              font.family: root.fontFamily
+              font.pixelSize: coverFrame.height * 0.75
+            }
+          }
         }
       }
 
       Item {
         width: parent.width
         height: Math.max(searchInput.implicitHeight, searchBtn.implicitHeight)
+        visible: !root.dimmed
 
         TextField {
           id: searchInput
@@ -395,7 +620,7 @@ Panel {
       Row {
         width: searchInput.width
         spacing: Style.space(6)
-        visible: results.count > 0
+        visible: results.count > 0 && !root.dimmed
 
         Button {
           width: (parent.width - parent.spacing) / 2
@@ -421,37 +646,27 @@ Panel {
       }
       }
 
-      Flickable {
-        id: resultsFlick
+      ListView {
+        id: resultsList
         width: parent.width
-        visible: results.count > 0
+        visible: results.count > 0 && !root.dimmed
         height: visible ? Math.max(0, content.height - header.height - content.spacing) : 0
-        contentWidth: width
-        contentHeight: resultsColumn.implicitHeight
         clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        flickableDirection: Flickable.VerticalFlick
-        interactive: contentHeight > height
+        spacing: root.listSpacing
+        model: results
         ScrollBar.vertical: ScrollBar {
           policy: ScrollBar.AsNeeded
         }
 
-        Column {
-          id: resultsColumn
-          width: resultsFlick.width - (resultsFlick.contentHeight > resultsFlick.height ? Style.space(12) : 0)
-          spacing: Style.space(4)
-
-        Repeater {
-          model: results
-
-          Item {
-            required property string selector
-            required property string title
-            required property string artist
-            required property string kind
-            required property string artworkUrl
-            width: parent.width
-            height: Math.max(plusBtn.implicitHeight, Style.space(28))
+        delegate: Item {
+          required property string selector
+          required property string title
+          required property string artist
+          required property string kind
+          required property string artworkUrl
+          readonly property bool inQueue: root.queueIndexOfSelector(selector) >= 0
+          width: resultsList.width
+          height: root.rowHeight
 
             Image {
               id: rowArt
@@ -534,23 +749,114 @@ Panel {
               id: plusBtn
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              text: "+"
+              height: parent.height
+              text: (root.listMode === "queue" || inQueue) ? "−" : "+"
+              tooltipText: (root.listMode === "queue" || inQueue) ? "Remove from queue" : "Add to queue"
               bordered: true
               foreground: root.fg
               fontFamily: root.fontFamily
-              visible: selector.indexOf("jump:") !== 0
-              onClicked: root.queueSelector(selector)
+              visible: root.listMode === "queue" ? true : selector.indexOf("jump:") !== 0
+              onClicked: {
+                if (selector.indexOf("jump:") === 0)
+                  root.removeQueueItem(Number(selector.slice(5)))
+                else if (inQueue)
+                  root.removeQueueItem(root.queueIndexOfSelector(selector))
+                else
+                  root.queueSelector(selector)
+              }
             }
           }
+      }
+    }
+  }
+
+  PopupCard {
+    id: nowPlayingToast
+    anchorItem: button
+    bar: root.bar
+    owner: root
+    triggerMode: "hover"
+    open: root.toastOpen
+    contentWidth: Style.space(320)
+    contentHeight: Style.space(68)
+
+    Row {
+      anchors.centerIn: parent
+      width: parent.width
+      spacing: Style.space(10)
+
+      BorderSurface {
+        id: toastCover
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(56)
+        height: Style.space(56)
+        radius: Style.spacing.labelGap
+        color: Style.normalFillFor(root.fg, Color.accent)
+
+        Image {
+          anchors.fill: parent
+          anchors.margins: Style.space(2)
+          fillMode: Image.PreserveAspectCrop
+          asynchronous: true
+          source: root.artworkUrl
+          visible: root.artworkUrl !== ""
         }
+
+        Text {
+          anchors.centerIn: parent
+          visible: root.artworkUrl === ""
+          text: "󰝚"
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
         }
+      }
+
+      Column {
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width - toastCover.width - parent.spacing
+        spacing: Style.space(2)
+
+        Text {
+          width: parent.width
+          text: root.trackTitle
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.subtitle
+          font.bold: true
+          elide: Text.ElideRight
+        }
+
+        Text {
+          width: parent.width
+          text: root.trackArtist
+          color: Qt.darker(root.fg, 1.35)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: {
+        root.toastOpen = false
+        root.toggle()
       }
     }
   }
 
   Timer {
+    interval: 4000
+    running: root.toastOpen
+    onTriggered: root.toastOpen = false
+  }
+
+  Timer {
     interval: 2000
-    running: root.opened || root.playbackState === "playing"
+    running: true
     repeat: true
     onTriggered: root.refreshStatus()
   }
@@ -575,8 +881,18 @@ Panel {
           root.radioOn = payload.radio === true
           root.shuffleOn = payload.shuffle === true
           root.favoriteOn = payload.favorite === true
-          if (payload.error && !payload.available) root.message = payload.error
+          root.statusLoaded = true
+          root.loggedIn = payload.logged_in === true
+          if (root.loggedIn) {
+            root.loginState = "none"
+            root.loginUrl = ""
+            redirectInput.text = ""
+            if (!payload.available) root.message = "Player stopped."
+          } else if (root.loginState === "none" && !actionProc.running) {
+            root.message = "Not logged in."
+          }
           if (root.listMode === "queue") root.showQueue()
+          root.noteTrackChange()
         } catch (error) {
           root.message = "otidal is not installed or returned invalid status."
         }
@@ -626,7 +942,7 @@ Panel {
           addEntries(payload.artists, "artist", "r:")
           root.listMode = "search"
           root.message = count ? "Select a result" : "No results"
-          resultsFlick.contentY = 0
+          resultsList.contentY = 0
         } catch (error) {
           root.message = "Search failed."
         }
@@ -647,6 +963,7 @@ Panel {
             root.clearResults()
           if (root.listMode === "queue") root.showQueue()
         } catch (error) {
+          root.message = "otidal returned no valid response."
         }
       }
     }
