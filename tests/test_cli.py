@@ -131,6 +131,62 @@ class CliTests(unittest.TestCase):
                 payload = json.loads(output.getvalue())
                 self.assertTrue(payload["logged_in"])
 
+    def test_login_start_help_is_documented(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaises(SystemExit) as raised:
+                main(["login", "start", "--help"])
+        self.assertEqual(raised.exception.code, 0)
+        help_text = output.getvalue()
+        self.assertIn("--no-browser", help_text)
+        self.assertIn("--json", help_text)
+
+    def test_login_finish_help_is_documented(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaises(SystemExit) as raised:
+                main(["login", "finish", "--help"])
+        self.assertEqual(raised.exception.code, 0)
+        help_text = output.getvalue()
+        self.assertIn("--redirect", help_text)
+
+    def test_logout_is_documented(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaises(SystemExit) as raised:
+                main(["logout", "--help"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("logout", output.getvalue())
+
+    def test_remove_is_documented(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaises(SystemExit) as raised:
+                main(["remove", "--help"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("position", output.getvalue())
+
+    def test_status_json_reports_logged_in(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_home = Path(directory)
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config_home)}):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = main(["status", "--json"])
+                self.assertEqual(result, 0)
+                payload = json.loads(output.getvalue())
+                self.assertFalse(payload["logged_in"])
+
+            (config_home / "otidal").mkdir(parents=True)
+            (config_home / "otidal" / "session.json").write_text("{}", encoding="utf-8")
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config_home)}):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = main(["status", "--json"])
+                self.assertEqual(result, 0)
+                payload = json.loads(output.getvalue())
+                self.assertTrue(payload["logged_in"])
+
 
 if __name__ == "__main__":
     unittest.main()
