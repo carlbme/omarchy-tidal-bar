@@ -245,6 +245,34 @@ def cmd_toggle(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_shuffle(args: argparse.Namespace) -> int:
+    params: dict[str, object] = {}
+    if args.state == "on":
+        params["enabled"] = True
+    elif args.state == "off":
+        params["enabled"] = False
+    payload = request("shuffle", params, start=True)
+    if args.json:
+        _emit(payload)
+    else:
+        print("shuffle on." if payload.get("shuffle") else "shuffle off.")
+    return 0
+
+
+def cmd_favorite(args: argparse.Namespace) -> int:
+    params: dict[str, object] = {}
+    if args.state == "on":
+        params["enabled"] = True
+    elif args.state == "off":
+        params["enabled"] = False
+    payload = request("favorite", params, start=True)
+    if args.json:
+        _emit(payload)
+    else:
+        print("favorite." if payload.get("favorite") else "not a favorite.")
+    return 0
+
+
 def cmd_quit(args: argparse.Namespace) -> int:
     try:
         payload = request("quit")
@@ -326,6 +354,16 @@ def build_parser() -> argparse.ArgumentParser:
     toggle = commands.add_parser("toggle", help="Toggle pause/play")
     toggle.add_argument("--json", action="store_true")
     toggle.set_defaults(func=cmd_toggle)
+
+    shuffle = commands.add_parser("shuffle", help="Shuffle remaining queued tracks")
+    shuffle.add_argument("state", nargs="?", choices=["on", "off"])
+    shuffle.add_argument("--json", action="store_true")
+    shuffle.set_defaults(func=cmd_shuffle)
+
+    favorite = commands.add_parser("favorite", help="Toggle favorite for the current track")
+    favorite.add_argument("state", nargs="?", choices=["on", "off"])
+    favorite.add_argument("--json", action="store_true")
+    favorite.set_defaults(func=cmd_favorite)
 
     quit_cmd = commands.add_parser("quit", help="Stop playback and shut down the player process")
     quit_cmd.add_argument("--json", action="store_true")

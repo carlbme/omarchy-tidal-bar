@@ -1,40 +1,35 @@
 # omarchy-tidal-bar — Roadmap
 
 Each milestone must work without reading or changing the installed personal
-TIDAL CLI. Login, search, and a basic mpv controller already exist in-tree.
-The remaining unknown is live stream proof, not those pieces.
-
-The CLI plus idle mpv process is a feasibility harness. The product is a small
-persistent player that owns the TIDAL session, queue, and mpv child.
+TIDAL CLI.
 
 1. **Live gate** — *passed.* Isolated login works. Search works. LOSSLESS
    playback of `t:56299935` (Marilyn Manson — Coma White) reached PipeWire
-   via a local MPEG-DASH `.mpd` (TIDAL served DASH for LOSSLESS, not a BTS
-   URL). mpv needed a lavf `https` protocol whitelist; `otidal-dev` must not
-   replace `XDG_RUNTIME_DIR`. The old `tidal` command and MPD stayed
-   untouched.
-2. **DASH proof** — one HI_RES MPEG-DASH track plays. Prefer a local `.mpd`
-   file. If mpv cannot consume that file, serve it from a **private** loopback
-   or Unix-socket HTTP helper owned by otidal. Never use port 8765 or the
-   existing `tidal-manifest` unit. Do not return to MPD unless both the direct
-   URL and private-helper DASH paths fail.
-3. **Player process** — *passed.* `otidal daemon` owns mpv and a Unix-socket
-   JSON protocol at `player.sock`. `play` auto-starts it. `quit` shuts it
-   down. Live play/status/toggle/stop/quit of Coma White worked.
-4. **Queue** — *passed.* play vs append, next/previous, auto-advance when
-   mpv goes idle. Streams are re-resolved per track.
-5. **Radio and catalog** — replenishing radio, favorites, mixed search, and
-   `t:`/`a:`/`p:`/`r:`/`favs` expand. Artwork URL on catalog tracks and
-   status. Unit tests against fakes.
-6. **MPRIS** — *passed.* The player process publishes
-   `org.mpris.MediaPlayer2.otidal` with metadata, artwork, play/pause/stop/
-   next/previous, seek, and volume. Omarchy's built-in media widget should
-   talk to otidal, not to `mpv-mpris`.
-7. **Omarchy plugin** — *installed locally for testing.* The bar widget
-   calls the plugin-local `bin/otidal` wrapper, which uses `scripts/otidal-dev`
-   so it talks to the isolated player process. Search, favorites, radio,
-   play, queue, next/prev, and status polling are in the panel. Rollback:
-   `scripts/otidal-plugin-rollback`. Do not publish a git remote.
+   via a local MPEG-DASH `.mpd`. mpv needed a lavf `https` protocol
+   whitelist; `otidal-dev` must not replace `XDG_RUNTIME_DIR`.
+2. **DASH / Hi-Res** — *passed in daily use.* Default quality is
+   `HI_RES_LOSSLESS` with fallback. Live Hi-Res DASH (24-bit / 96 kHz) has
+   played through the same local `.mpd` path. A private HTTP helper remains
+   available if a future stream fails; never use port 8765 or the existing
+   `tidal-manifest` unit.
+3. **Player process** — *passed.* `otidal daemon` owns mpv and Unix-socket
+   JSON at `player.sock`. `play` auto-starts it. `quit` shuts it down.
+4. **Queue** — *passed.* play vs append, next/previous, auto-advance, jump.
+   Shuffle reorders the remaining tail and keeps the current track. Streams
+   are re-resolved per track.
+5. **Radio and catalog** — *passed.* Replenishing radio, mixed search,
+   `t:`/`a:`/`p:`/`r:`/`favs` expand, artwork URLs. Favorites can be listed,
+   added, and removed for the current track (`otidal favorite`).
+6. **MPRIS** — *passed.* `org.mpris.MediaPlayer2.otidal` with metadata,
+   artwork, and transport. Omarchy's built-in media widget should talk to
+   otidal, not to `mpv-mpris`.
+7. **Omarchy plugin** — *installed locally for testing.* Bar popup: search,
+   favorites, radio, queue, shuffle, favorite heart, playback controls.
+   Lists scroll inside a fixed popup; long titles marquee on hover. QML
+   edits need `omarchy restart shell` because the install is a symlink.
+   Rollback: `scripts/otidal-plugin-rollback`. Remote is
+   `origin` → `git@github.com:carlbme/omarchy-tidal-bar.git`. Pushes go to
+   a PR; the owner reviews and merges `master`.
 8. **Packaging** — Arch/AUR player package and a separately git-installed
    Shell plugin, only after this would replace the MPD path for daily use.
 

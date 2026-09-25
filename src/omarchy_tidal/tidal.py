@@ -372,12 +372,29 @@ class TidalClient:
         ]
         return tracks, albums, playlists, artists
 
-    def favorite_tracks(self, limit: int = 50) -> list[CatalogTrack]:
+    def _favorites(self) -> Any:
         user = getattr(self.session(), "user", None)
         favorites = getattr(user, "favorites", None)
         if favorites is None:
             raise LookupError("Favorites are not available for this session")
-        return [_catalog_track(track) for track in favorites.tracks(limit=limit)]
+        return favorites
+
+    def favorite_tracks(self, limit: int = 50) -> list[CatalogTrack]:
+        return [_catalog_track(track) for track in self._favorites().tracks(limit=limit)]
+
+    def is_favorite_track(self, track_id: str) -> bool:
+        favorites = self._favorites()
+        try:
+            favorites.requests.request("GET", f"{favorites.base_url}/tracks/{track_id}")
+            return True
+        except Exception:
+            return False
+
+    def add_favorite_track(self, track_id: str) -> bool:
+        return bool(self._favorites().add_track(str(track_id)))
+
+    def remove_favorite_track(self, track_id: str) -> bool:
+        return bool(self._favorites().remove_track(str(track_id)))
 
     def album_tracks(self, album_id: str) -> list[CatalogTrack]:
         album = self.session().album(album_id)

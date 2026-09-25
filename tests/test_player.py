@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import random
 import socket
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from omarchy_tidal.ipc import PlayerError, call_player, encode_response
 from omarchy_tidal.paths import AppPaths
@@ -67,6 +69,7 @@ class FakeMpv:
 class FakeTidal:
     def __init__(self) -> None:
         self.radio_calls = 0
+        self.favorite_ids = {"1", "2"}
         self.catalog = {
             "1": CatalogTrack("1", "One", "Artist", "Album", 10),
             "2": CatalogTrack("2", "Two", "Artist", "Album", 10),
@@ -114,6 +117,17 @@ class FakeTidal:
             return [seed]
         return [seed, *rest[:limit]]
 
+    def is_favorite_track(self, track_id: str) -> bool:
+        return str(track_id) in self.favorite_ids
+
+    def add_favorite_track(self, track_id: str) -> bool:
+        self.favorite_ids.add(str(track_id))
+        return True
+
+    def remove_favorite_track(self, track_id: str) -> bool:
+        self.favorite_ids.discard(str(track_id))
+        return True
+
 
 class PlayQueueTests(unittest.TestCase):
     def test_replace_append_and_neighbors(self) -> None:
@@ -126,6 +140,17 @@ class PlayQueueTests(unittest.TestCase):
         queue.index = 1
         self.assertEqual(queue.previous_index(), 0)
         self.assertIsNone(queue.next_index())
+
+    def test_shuffle_remaining_keeps_current_and_played(self) -> None:
+        queue = PlayQueue()
+        for ident in ("a", "b", "c", "d", "e"):
+            queue.append({"id": ident})
+        queue.index = 1
+        queue.shuffle_remaining(random.Random(0))
+        self.assertEqual(queue.items[0]["id"], "a")
+        self.assertEqual(queue.items[1]["id"], "b")
+        self.assertEqual({item["id"] for item in queue.items[2:]}, {"c", "d", "e"})
+        self.assertEqual(len(queue.items), 5)
 
 
 class PlayerTests(unittest.TestCase):
@@ -225,6 +250,52 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(self.player.radio_seed_id, "1")
         self.assertGreater(started["length"], 1)
         self.assertGreater(self.player.tidal.radio_calls, 1)  # type: ignore[attr-defined]
+
+    def test_shuffle_toggle_reorders_tail(self) -> None:
+        self.player.play("t:1")
+        self.player.enqueue("t:2")
+        self.player.enqueue("t:3")
+        with patch("omarchy_tidal.queue.random.shuffle", side_effect=lambda xs: xs.reverse()):
+            payload = self.player.handle("shuffle")
+        self.assertTrue(payload["shuffle"])
+        ids = [item["id"] for item in self.player.play_queue.items]
+        self.assertEqual(ids[0], "1")
+        self.assertEqual(ids, ["1", "3", "2"])
+        off = self.player.handle("shuffle", {"enabled": False})
+        self.assertFalse(off["shuffle"])
+        self.assertEqual([item["id"] for item in self.player.play_queue.items], ["1", "3", "2"])
+
+    def test_enqueue_while_shuffled_mixes_into_tail(self) -> None:
+        self.player.play("t:1")
+        self.player.enqueue("t:2")
+        with patch("omarchy_tidal.queue.random.shuffle", side_effect=lambda xs: xs.reverse()):
+            self.player.handle("shuffle", {"enabled": True})
+            self.player.enqueue("t:3")
+        ids = [item["id"] for item in self.player.play_queue.items]
+        self.assertEqual(ids[0], "1")
+        self.assertEqual(ids, ["1", "3", "2"])
+        self.assertTrue(self.player.status()["shuffle"])
+
+    def test_status_includes_shuffle(self) -> None:
+        self.assertFalse(self.player.status()["shuffle"])
+        self.player.handle("shuffle", {"enabled": True})
+        self.assertTrue(self.player.status()["shuffle"])
+
+    def test_play_reports_favorite_from_catalog(self) -> None:
+        played = self.player.play("t:1")
+        self.assertTrue(played["favorite"])
+        self.assertTrue(self.player.status()["favorite"])
+        other = self.player.play("t:3")
+        self.assertFalse(other["favorite"])
+
+    def test_favorite_toggle_adds_and_removes(self) -> None:
+        self.player.play("t:3")
+        added = self.player.handle("favorite")
+        self.assertTrue(added["favorite"])
+        self.assertIn("3", self.player.tidal.favorite_ids)  # type: ignore[attr-defined]
+        removed = self.player.handle("favorite")
+        self.assertFalse(removed["favorite"])
+        self.assertNotIn("3", self.player.tidal.favorite_ids)  # type: ignore[attr-defined]
 
     def test_handle_unknown_method(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unknown player method"):

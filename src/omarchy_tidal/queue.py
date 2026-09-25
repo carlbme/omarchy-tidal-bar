@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 
 class PlayQueue:
     def __init__(self) -> None:
@@ -32,6 +34,17 @@ class PlayQueue:
         if candidate >= 0:
             return candidate
         return None
+
+    def shuffle_remaining(self, rng: random.Random | None = None) -> None:
+        if not self.items:
+            return
+        shuffle = rng.shuffle if rng is not None else random.shuffle
+        if self.index < 0 or self.index >= len(self.items):
+            shuffle(self.items)
+            return
+        tail = self.items[self.index + 1 :]
+        shuffle(tail)
+        self.items = self.items[: self.index + 1] + tail
 
     def snapshot(self) -> dict[str, object]:
         return {

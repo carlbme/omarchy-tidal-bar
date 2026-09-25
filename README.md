@@ -1,49 +1,63 @@
 # omarchy-tidal-bar
 
-An isolated prototype for a local, unofficial TIDAL player with an optional
-Omarchy Shell integration. It does not install files, start services, read the
-credentials of, or communicate with the existing `~/.local/bin/tidal`
-application.
+An isolated, unofficial TIDAL player with an optional Omarchy Shell bar
+plugin. It does not install files, start services, read the credentials of,
+or communicate with the existing `~/.local/bin/tidal` application.
 
 ## Current state
 
-This repository is at an isolated local prototype stage:
-
-- `otidal` is a new, non-conflicting command name.
-- The Python package defines a stable JSON status contract.
-- Login uses a dedicated `~/.config/otidal/session.json`; it never loads the
-  credentials used by the existing personal CLI.
-- Search, track resolution, BTS/DASH stream handoff, and mpv JSON IPC are wired.
-- Default quality is HI_RES_LOSSLESS, falling back to LOSSLESS/HIGH/LOW.
-- Live account login and LOSSLESS DASH playback of a real track have been
-  proven in `.dev/` (Marilyn Manson — Coma White).
-- `play` auto-starts `otidal daemon`, which owns mpv over `player.sock`.
-- `omarchy-plugin/` is a frozen, separately validatable Shell plugin sketch.
-  It is not installed and is not the integration to grow next.
-- Queue, mixed search, favorites, album/artist/playlist expand,
-  replenishing radio, and MPRIS (`org.mpris.MediaPlayer2.otidal`) are in
-  the player process. The Omarchy bar plugin can be installed locally
-  with `scripts/otidal-plugin-install` and removed with
-  `scripts/otidal-plugin-rollback`. Packaging is not implemented.
-- No installer or systemd unit exists yet.
-
-Run the safe scaffold locally:
-
-```bash
-PYTHONPATH=src python -m omarchy_tidal --help
-PYTHONPATH=src python -m omarchy_tidal status --json
-PYTHONPATH=src python -m unittest discover -s tests
-omarchy plugin validate ./omarchy-plugin
-```
-
-For live development without touching any existing TIDAL state, use
-[`scripts/otidal-dev`](scripts/otidal-dev) as described in
-[`DEVELOPMENT.md`](DEVELOPMENT.md).
+- `otidal` is a new, non-conflicting command. The Python package is
+  `omarchy_tidal`. The Omarchy plugin id is `community.otidal`.
+- Login uses a dedicated `session.json`; it never loads credentials from the
+  existing personal CLI.
+- `play` auto-starts `otidal daemon`, which owns mpv over `player.sock` and
+  publishes MPRIS as `org.mpris.MediaPlayer2.otidal`.
+- Queue, mixed search, favorites list/add/remove, album/artist/playlist
+  expand, replenishing radio, and shuffle of remaining tracks live in the
+  player process.
+- Default quality is HI_RES_LOSSLESS, falling back through LOSSLESS/HIGH/LOW.
+  Live playback has used both LOSSLESS DASH and Hi-Res DASH.
+- The Omarchy bar plugin is installed locally as a symlink via
+  `scripts/otidal-plugin-install` and removed with
+  `scripts/otidal-plugin-rollback`. Packaging / AUR is not implemented.
 
 This is an unofficial personal community project, not affiliated with TIDAL.
-
 Playback uses the unofficial `tidalapi` package; that path is outside TIDAL's
 documented third-party playback offering.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the proposed production shape and
-[ROADMAP.md](ROADMAP.md) for the gated implementation sequence.
+## Commands
+
+```text
+login search favs play queue radio next prev jump toggle stop
+shuffle favorite status quit doctor daemon
+```
+
+Most playback commands accept `--json`. `shuffle` and `favorite` toggle, or
+take `on` / `off`.
+
+## Plugin
+
+The bar popup talks only to the plugin-local `bin/otidal` wrapper (which
+runs `scripts/otidal-dev`). It provides search, favorites, radio, queue,
+shuffle, a favorite heart for the current track, and playback controls.
+Search and queue lists stay inside the popup with a scrollbar. Long titles
+marquee on hover. Shuffle and Close List appear under the search field when
+a list is open.
+
+The install is a symlink into `~/.config/omarchy/plugins/`. Omarchy's plugin
+watcher does not follow that symlink, so QML edits need
+`omarchy restart shell`. New player IPC methods need `otidal-dev quit` (the
+next play command starts a fresh daemon).
+
+## Local checks
+
+```bash
+PYTHONPATH=src python3 -m omarchy_tidal --help
+PYTHONPATH=src python3 -m unittest discover -s tests
+omarchy plugin validate ./omarchy-plugin
+```
+
+Live development without touching existing TIDAL state uses
+[`scripts/otidal-dev`](scripts/otidal-dev). See
+[`DEVELOPMENT.md`](DEVELOPMENT.md), [`ARCHITECTURE.md`](ARCHITECTURE.md),
+and [`ROADMAP.md`](ROADMAP.md).
