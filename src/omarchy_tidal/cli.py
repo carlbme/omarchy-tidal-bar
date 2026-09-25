@@ -33,11 +33,13 @@ def _mpris_available() -> bool:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
+    logged_in = AppPaths.from_environment().session_file.is_file()
     try:
         payload = request("status")
     except PlayerUnavailable as error:
         payload = PlayerStatus(error=str(error)).to_dict()
         payload["error"] = str(error)
+    payload["logged_in"] = logged_in
     if args.json:
         _emit(payload)
         return 0
@@ -94,6 +96,47 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 def cmd_login(_args: argparse.Namespace) -> int:
     TidalClient().login()
     print("Logged in. Credentials are stored only in otidal's config directory.")
+    return 0
+
+
+def cmd_login_start(args: argparse.Namespace) -> int:
+    payload: dict[str, object] = {"schema_version": 1}
+    payload.update(TidalClient().login_start(open_browser=not args.no_browser))
+    if args.json:
+        _emit(payload)
+        return 0
+    if payload["state"] == "already_logged_in":
+        print("Already logged in.")
+    else:
+        print("Opened the TIDAL login page in your browser.")
+        print(f"URL: {payload['url']}")
+        print("After logging in you land on an 'Oops' page.")
+        print("Copy its URL and run:")
+        print("  otidal login finish --redirect <oops-page-url>")
+    return 0
+
+
+def cmd_login_finish(args: argparse.Namespace) -> int:
+    payload: dict[str, object] = {"schema_version": 1}
+    payload.update(TidalClient().login_finish(args.redirect))
+    if args.json:
+        _emit(payload)
+        return 0
+    print("Logged in. Credentials are stored only in otidal's config directory.")
+    return 0
+
+
+def cmd_logout(args: argparse.Namespace) -> int:
+    try:
+        payload = request("logout")
+    except PlayerUnavailable:
+        TidalClient().logout()
+        payload = {"schema_version": 1, "state": "stopped", "logged_in": False}
+    payload.setdefault("logged_in", False)
+    if args.json:
+        _emit(payload)
+    else:
+        print("Logged out.")
     return 0
 
 
@@ -273,6 +316,20 @@ def cmd_favorite(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_remove(args: argparse.Namespace) -> int:
+    if args.position < 1:
+        raise ValueError("remove position must be 1 or greater")
+    payload = request("remove", {"index": args.position - 1})
+    if args.json:
+        _emit(payload)
+        return 0
+    if payload.get("state") == "stopped":
+        print("Removed the current track. Playback stopped.")
+    else:
+        print(f"Removed from queue  [{payload.get('length')} left]")
+    return 0
+
+
 def cmd_quit(args: argparse.Namespace) -> int:
     try:
         payload = request("quit")
@@ -297,8 +354,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
 
-    login = commands.add_parser("login", help="Create an isolated TIDAL PKCE session")
+    login = commands.add_parser(
+        "login", help="Create an isolated TIDAL PKCE session (blocking; see login start/finish)"
+    )
     login.set_defaults(func=cmd_login)
+    login_sub = login.add_subparsers(dest="login_action")
+    login_start = login_sub.add_parser(
+        "start", help="Begin PKCE login: print and open the login URL, return immediately"
+    )
+    login_start.add_argument(
+        "--no-browser", action="store_true", help="Do not open the login URL in a browser"
+    )
+    login_start.add_argument("--json", action="store_true")
+    login_start.set_defaults(func=cmd_login_start)
+    login_finish = login_sub.add_parser(
+        "finish", help="Complete PKCE login with the redirected 'Oops' page URL"
+    )
+    login_finish.add_argument("--redirect", required=True, help="The 'Oops' page URL to exchange")
+    login_finish.add_argument("--json", action="store_true")
+    login_finish.set_defaults(func=cmd_login_finish)
+
+    logout = commands.add_parser("logout", help="Stop playback and delete the otidal session")
+    logout.add_argument("--json", action="store_true")
+    logout.set_defaults(func=cmd_logout)
 
     search = commands.add_parser("search", help="Search tracks, albums, playlists, and artists")
     search.add_argument("query", nargs="+")
@@ -364,6 +442,11 @@ def build_parser() -> argparse.ArgumentParser:
     favorite.add_argument("state", nargs="?", choices=["on", "off"])
     favorite.add_argument("--json", action="store_true")
     favorite.set_defaults(func=cmd_favorite)
+
+    remove = commands.add_parser("remove", help="Remove a queue position (1-based); removing the current track stops playback")
+    remove.add_argument("position", type=int)
+    remove.add_argument("--json", action="store_true")
+    remove.set_defaults(func=cmd_remove)
 
     quit_cmd = commands.add_parser("quit", help="Stop playback and shut down the player process")
     quit_cmd.add_argument("--json", action="store_true")

@@ -20,15 +20,20 @@ thin, optional presentation layer rather than the owner of playback.
 
 The Shell plugin calls the public CLI/JSON contract. It never holds
 credentials, decodes audio, or imports `tidalapi` inside `omarchy-shell`.
+When `status` reports `logged_in: false`, the popup shows a Login button
+that runs `login start` / `login finish`.
 
 ## Components
 
 ### `otidal`
 
 User-facing CLI. Catalog lookups that do not need the daemon
-(`login`, `search`, `favs` list, `doctor`) run in-process. Playback, queue,
-radio, shuffle, favorite toggle, and status go over `player.sock`. `play`
-auto-starts the daemon.
+(`login`, `search`, `favs` list, `doctor`) run in-process. `logout` uses the
+daemon when it is running and deletes the session files directly otherwise.
+Playback, queue, radio, shuffle, favorite toggle, and status go over
+`player.sock`. `play` auto-starts the daemon. `login start` / `login finish`
+perform the non-blocking PKCE exchange (`login-pending.json` holds the code
+verifier between the two steps).
 
 ### Player process
 
@@ -42,13 +47,16 @@ Queue policy:
 - `play` replaces the queue and starts index 0.
 - `queue` appends. If shuffle is on, new tracks are mixed into the remaining
   tail; the current track stays put.
+- `remove` deletes a queue position (shifting the index when it precedes the
+  current track). Removing the now-playing track stops playback.
 - `next` / `prev` / `jump` are sequential. Shuffle is a reorder of the
   remaining tail, not random-next.
 - Radio replenishes when few tracks remain. New radio tracks are shuffled
   into the tail when shuffle is on.
 - `favorite` adds or removes the current track via `tidalapi` user
-  favorites. Status reports `favorite` from a per-track check, not from a
-  full favorites list.
+  favorites. The per-track check is membership in a cached favorites list
+  (one GET per daemon session; the cache updates on add/remove), because
+  TIDAL has no per-track favorites GET endpoint.
 
 ### mpv
 
@@ -71,13 +79,26 @@ panel invokes `omarchy-plugin/bin/otidal`, which execs `scripts/otidal-dev`.
 
 Popup behavior:
 
-- Transport and library rows stay compact. A heart on the library row
-  toggles favorite for the current track.
+- Transport and library rows stay compact. A heart overlay on the artwork
+  (revealed on hover, outline vs. filled) toggles favorite for the current
+  track.
 - Search stays on one row with the Search button. When a list is open,
   Shuffle and Close List sit under the search field. Close List hides the
   list; it does not empty the play queue.
-- Results are clipped to the popup with a vertical scrollbar.
+- Results (search, queue, and the full favorites list up to 1000 tracks)
+  render in a lazy `ListView` clipped to the popup with a vertical
+  scrollbar, so row objects and artwork load on demand.
 - Long row titles marquee only while hovered.
+- Queue rows show a remove (−) button; search and favorites rows switch
+  between + and − by queue membership (matched against the `status` queue
+  IDs on the 2s poll). Clicking − on an already-queued result removes it.
+- The plugin polls `status --json` every 2s continuously (so the bar also
+  reflects external start/stop/queue changes). On a `track.id` change
+  while logged in, a now-playing toast opens via the shell's `PopupCard`
+  (a dedicated `PopupWindow` anchored under the bar item, passive
+  "hover" mode — no focus grab, no outside-click dismissal). It auto-hides
+  after 4s; clicking it opens the main popup. The first read after a reset
+  only sets the baseline and never toasts.
 
 ## Isolation rules
 
@@ -99,13 +120,16 @@ Stopped / missing player:
   "track": null,
   "position": 0.0,
   "duration": 0.0,
-  "error": "player is not running"
+  "error": "player is not running",
+  "logged_in": false
 }
 ```
 
 While the daemon is up, additive fields currently include `queue`, `index`,
-`radio`, `shuffle`, `favorite`, and `volume`. Additive fields are allowed
-within version 1; incompatible changes require a new schema version.
+`radio`, `shuffle`, `favorite`, and `volume`. `logged_in` is added by the
+CLI from the session file, so it is present even when the daemon is stopped.
+Additive fields are allowed within version 1; incompatible changes require a
+new schema version.
 
 ## Packaging direction
 

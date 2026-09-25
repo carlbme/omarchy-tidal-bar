@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -304,9 +305,20 @@ def _write_manifest_file(paths: AppPaths, track_id: str, manifest: str) -> Path:
     return destination
 
 
+def normalize_redirect_url(redirect_url: str) -> str:
+    """Accept the full 'Oops' page URL, a raw code, or a ?query fragment."""
+    redirect = str(redirect_url).strip()
+    if "://" in redirect:
+        return redirect
+    if redirect.startswith("?"):
+        return "https://tidal.com/android/login/auth" + redirect
+    return "https://tidal.com/android/login/auth?code=" + redirect
+
+
 class TidalClient:
     def __init__(self, paths: AppPaths | None = None) -> None:
         self.paths = paths or AppPaths.from_environment()
+        self._favorite_ids: set[str] | None = None
 
     @staticmethod
     def _new_session() -> Any:
@@ -323,12 +335,90 @@ class TidalClient:
             raise LoginRequired("TIDAL login failed")
         self.paths.session_file.chmod(0o600)
 
+    def _load_pending_login(self) -> dict[str, object] | None:
+        try:
+            payload = json.loads(self.paths.login_pending_file.read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            return None
+        if not isinstance(payload, dict) or not str(payload.get("url") or ""):
+            return None
+        return payload
+
+    def _save_pending_login(self, state: dict[str, object]) -> None:
+        self.paths.prepare_private_dirs()
+        destination = self.paths.login_pending_file
+        temporary = destination.with_suffix(".tmp")
+        temporary.write_text(json.dumps(state, separators=(",", ":")), encoding="utf-8")
+        temporary.chmod(0o600)
+        temporary.replace(destination)
+
+    def login_start(self, open_browser: bool = True) -> dict[str, object]:
+        self.paths.prepare_private_dirs()
+        if self.paths.session_file.is_file():
+            try:
+                self.session()
+            except LoginRequired:
+                self.paths.session_file.unlink(missing_ok=True)
+            else:
+                self.paths.login_pending_file.unlink(missing_ok=True)
+                return {"state": "already_logged_in", "logged_in": True}
+        pending = self._load_pending_login()
+        if pending is not None:
+            return {"state": "pending", "url": str(pending["url"])}
+        session = self._new_session()
+        url = session.pkce_login_url()
+        self._save_pending_login(
+            {
+                "code_verifier": str(session.config.code_verifier),
+                "client_unique_key": str(session.config.client_unique_key),
+                "url": url,
+            }
+        )
+        if open_browser:
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+        return {"state": "pending", "url": url}
+
+    def login_finish(self, redirect_url: str) -> dict[str, object]:
+        pending = self._load_pending_login()
+        if pending is None:
+            raise LookupError("No login in progress. Run: otidal login start")
+        session = self._new_session()
+        session.config.code_verifier = str(pending["code_verifier"])
+        session.config.client_unique_key = str(
+            pending.get("client_unique_key") or session.config.client_unique_key
+        )
+        try:
+            token = session.pkce_get_auth_token(normalize_redirect_url(redirect_url))
+            session.process_auth_token(token, is_pkce_token=True)
+            session.save_session_to_file(self.paths.session_file)
+        except Exception as error:
+            # The code exchange is consumed; drop the pending state so the next
+            # `login start` issues a fresh challenge.
+            self.paths.login_pending_file.unlink(missing_ok=True)
+            message = str(error)
+            if getattr(error, "response", None) is not None:
+                message = "TIDAL rejected the code (expired or wrong 'Oops' URL)"
+            raise LoginRequired(f"TIDAL login failed: {message}") from error
+        if not self.paths.session_file.is_file():
+            self.paths.login_pending_file.unlink(missing_ok=True)
+            raise LoginRequired("TIDAL login failed: session was not saved")
+        self.paths.session_file.chmod(0o600)
+        self.paths.login_pending_file.unlink(missing_ok=True)
+        return {"state": "done", "logged_in": True}
+
+    def logout(self) -> None:
+        self.paths.session_file.unlink(missing_ok=True)
+        self.paths.login_pending_file.unlink(missing_ok=True)
+
     def session(self) -> Any:
         if not self.paths.session_file.is_file():
-            raise LoginRequired("Not logged in. Run: otidal login")
+            raise LoginRequired("Not logged in. Run: otidal login start")
         session = self._new_session()
         if not session.load_session_from_file(self.paths.session_file) or not session.check_login():
-            raise LoginRequired("TIDAL session expired. Run: otidal login")
+            raise LoginRequired("TIDAL session expired. Run: otidal login start")
         return session
 
     def search_tracks(self, query: str, limit: int = 10) -> list[CatalogTrack]:
@@ -382,19 +472,27 @@ class TidalClient:
     def favorite_tracks(self, limit: int = 50) -> list[CatalogTrack]:
         return [_catalog_track(track) for track in self._favorites().tracks(limit=limit)]
 
+    def _favorite_id_set(self) -> set[str]:
+        if self._favorite_ids is None:
+            self._favorite_ids = {
+                str(track.id) for track in self._favorites().tracks(limit=1000)
+            }
+        return self._favorite_ids
+
     def is_favorite_track(self, track_id: str) -> bool:
-        favorites = self._favorites()
-        try:
-            favorites.requests.request("GET", f"{favorites.base_url}/tracks/{track_id}")
-            return True
-        except Exception:
-            return False
+        return str(track_id) in self._favorite_id_set()
 
     def add_favorite_track(self, track_id: str) -> bool:
-        return bool(self._favorites().add_track(str(track_id)))
+        if not bool(self._favorites().add_track(str(track_id))):
+            return False
+        self._favorite_id_set().add(str(track_id))
+        return True
 
     def remove_favorite_track(self, track_id: str) -> bool:
-        return bool(self._favorites().remove_track(str(track_id)))
+        if not bool(self._favorites().remove_track(str(track_id))):
+            return False
+        self._favorite_id_set().discard(str(track_id))
+        return True
 
     def album_tracks(self, album_id: str) -> list[CatalogTrack]:
         album = self.session().album(album_id)

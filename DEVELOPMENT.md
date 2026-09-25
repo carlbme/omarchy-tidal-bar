@@ -33,11 +33,22 @@ scripts/otidal-dev play "exact track query"
 scripts/otidal-dev status
 scripts/otidal-dev shuffle
 scripts/otidal-dev favorite
+scripts/otidal-dev remove 2
 scripts/otidal-dev stop
 ```
 
-Login is interactive. The session is stored at
-`.dev/config/otidal/session.json`. Default quality is `HI_RES_LOSSLESS`.
+Login is two-phase and non-blocking:
+
+```bash
+scripts/otidal-dev login start
+# log in at the URL (opened in your browser), copy the 'Oops' page URL
+scripts/otidal-dev login finish --redirect <oops-page-url>
+```
+
+A bare `scripts/otidal-dev login` still runs the original blocking flow.
+`scripts/otidal-dev logout` stops playback and deletes the session. The
+session is stored at `.dev/config/otidal/session.json`. Default quality is
+`HI_RES_LOSSLESS`.
 
 `shuffle` and `favorite` toggle. Pass `on` or `off` to set them. Both accept
 `--json`.
