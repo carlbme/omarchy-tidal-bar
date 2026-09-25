@@ -47,6 +47,9 @@ Queue policy:
 - `play` replaces the queue and starts index 0.
 - `queue` appends. If shuffle is on, new tracks are mixed into the remaining
   tail; the current track stays put.
+- `shuffle <selector>` queues the selector (skipping tracks already in the
+  queue), turns shuffle on, and starts playback from a random position when
+  the queue was empty.
 - `remove` deletes a queue position (shifting the index when it precedes the
   current track). Removing the now-playing track stops playback.
 - `next` / `prev` / `jump` are sequential. Shuffle is a reorder of the
@@ -84,7 +87,9 @@ Popup behavior:
   track.
 - Search stays on one row with the Search button. When a list is open,
   Shuffle and Close List sit under the search field. Close List hides the
-  list; it does not empty the play queue.
+  list; it does not empty the play queue. Shuffle over the favorites list
+  queues all favorites, starts playback shuffled, and switches to the queue
+  view.
 - Results (search, queue, and the full favorites list up to 1000 tracks)
   render in a lazy `ListView` clipped to the popup with a vertical
   scrollbar, so row objects and artwork load on demand.

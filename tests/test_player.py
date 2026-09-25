@@ -280,6 +280,33 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(ids, ["1", "3", "2"])
         self.assertTrue(self.player.status()["shuffle"])
 
+    def test_shuffle_with_selector_queues_favorites_and_starts(self) -> None:
+        with patch("omarchy_tidal.queue.random.shuffle", side_effect=lambda xs: xs.reverse()):
+            payload = self.player.handle("shuffle", {"selector": "favs"})
+        self.assertEqual(payload["state"], "playing")
+        self.assertTrue(payload["shuffle"])
+        self.assertEqual(payload["added"], 2)
+        self.assertEqual(self.player.play_queue.index, 0)
+        self.assertEqual(self.player.play_queue.current()["id"], "2")
+        self.assertEqual(self.mpv.loaded[0], "https://cdn.example.test/2.flac")
+        self.assertTrue(self.player.shuffle_on)
+
+    def test_shuffle_with_selector_appends_deduped_and_keeps_current(self) -> None:
+        self.player.play("t:1")
+        self.player.enqueue("t:3")
+        with patch("omarchy_tidal.queue.random.shuffle", side_effect=lambda xs: xs.reverse()):
+            payload = self.player.handle("shuffle", {"selector": "favs"})
+        self.assertEqual(payload["state"], "playing")
+        self.assertEqual(payload["added"], 1)
+        self.assertEqual(payload["length"], 3)
+        self.assertEqual(self.player.play_queue.current()["id"], "1")
+        self.assertEqual([item["id"] for item in self.player.play_queue.items], ["1", "2", "3"])
+        self.assertTrue(self.player.shuffle_on)
+
+    def test_shuffle_with_selector_unknown_raises(self) -> None:
+        with self.assertRaisesRegex(LookupError, "missing"):
+            self.player.handle("shuffle", {"selector": "missing"})
+
     def test_status_includes_shuffle(self) -> None:
         self.assertFalse(self.player.status()["shuffle"])
         self.player.handle("shuffle", {"enabled": True})

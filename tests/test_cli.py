@@ -52,6 +52,28 @@ class CliTests(unittest.TestCase):
         help_text = output.getvalue()
         self.assertIn("on", help_text)
         self.assertIn("off", help_text)
+        self.assertIn("selector", help_text)
+
+    def test_shuffle_request_params(self) -> None:
+        cases = {
+            ("shuffle",): {},
+            ("shuffle", "on"): {"enabled": True},
+            ("shuffle", "off"): {"enabled": False},
+            ("shuffle", "favs"): {"selector": "favs"},
+            ("shuffle", "on", "favs"): {"enabled": True, "selector": "favs"},
+        }
+        for argv, expected in cases.items():
+            with patch(
+                "omarchy_tidal.cli.request",
+                return_value={"schema_version": 1, "shuffle": True},
+            ) as mock_request:
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = main(list(argv))
+            self.assertEqual(result, 0, argv)
+            self.assertEqual(mock_request.call_args.args[0], "shuffle", argv)
+            self.assertEqual(mock_request.call_args.args[1], expected, argv)
+            self.assertTrue(mock_request.call_args.kwargs.get("start"), argv)
 
     def test_login_start_help_is_documented(self) -> None:
         output = io.StringIO()

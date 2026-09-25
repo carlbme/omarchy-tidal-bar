@@ -43,6 +43,8 @@ Panel {
     : 0
   property var queueItems: []
   property var pendingAction: null
+  property string pendingListMode: "search"
+  property bool shuffleFavsPending: false
 
   ListModel { id: results }
 
@@ -140,6 +142,7 @@ Panel {
     var query = searchInput.text.trim()
     if (!query || searchProc.running) return
     root.message = "Searching…"
+    root.pendingListMode = "search"
     searchProc.command = root.cmd(["search", query, "--limit", "8", "--json"])
     searchProc.running = true
   }
@@ -147,6 +150,7 @@ Panel {
   function loadFavs() {
     if (!root.loggedIn || searchProc.running) return
     root.message = "Loading favorites…"
+    root.pendingListMode = "favs"
     searchProc.command = root.cmd(["favs", "--limit", "1000", "--json"])
     searchProc.running = true
   }
@@ -629,8 +633,14 @@ Panel {
           selected: root.shuffleOn
           foreground: root.fg
           fontFamily: root.fontFamily
-          opacity: root.listMode === "queue" ? 1 : 0.4
+          opacity: (root.listMode === "queue" || root.listMode === "favs") ? 1 : 0.4
           onClicked: {
+            if (root.listMode === "favs") {
+              root.shuffleFavsPending = true
+              root.message = "Queuing favorites and shuffling…"
+              root.runAction(["shuffle", "favs", "--json"])
+              return
+            }
             if (root.listMode !== "queue") return
             root.runAction(["shuffle", "--json"])
           }
@@ -940,7 +950,8 @@ Panel {
           addEntries(payload.albums, "album", "a:")
           addEntries(payload.playlists, "playlist", "p:")
           addEntries(payload.artists, "artist", "r:")
-          root.listMode = "search"
+          root.listMode = root.pendingListMode
+          root.pendingListMode = "search"
           root.message = count ? "Select a result" : "No results"
           resultsList.contentY = 0
         } catch (error) {
@@ -961,6 +972,10 @@ Panel {
           root.applyTrackPayload(payload)
           if (payload && payload.state === "playing" && root.listMode === "search")
             root.clearResults()
+          if (root.shuffleFavsPending) {
+            root.shuffleFavsPending = false
+            if (!payload || !payload.error) root.showQueue()
+          }
           if (root.listMode === "queue") root.showQueue()
         } catch (error) {
           root.message = "otidal returned no valid response."

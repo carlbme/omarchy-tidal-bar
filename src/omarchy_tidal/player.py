@@ -21,6 +21,7 @@ from .tidal import CatalogTrack, LoginRequired, TidalClient
 RADIO_REMAINING = 4
 RADIO_FETCH = 20
 QUEUE_CAP = 80
+FAVORITES_LIMIT = 1000
 
 
 def _load_now_playing(paths: AppPaths) -> dict[str, object] | None:
@@ -100,6 +101,9 @@ class Player:
         if method == "toggle":
             return self.toggle()
         if method == "shuffle":
+            selector = params.get("selector")
+            if selector:
+                return self.queue_shuffled(str(selector))
             enabled = params.get("enabled")
             if enabled is None:
                 return self.set_shuffle()
@@ -238,6 +242,34 @@ class Player:
         if self.shuffle_on:
             self.play_queue.shuffle_remaining()
         return self.status()
+
+    def queue_shuffled(self, selector: str) -> dict[str, Any]:
+        """Queue a selector (skipping tracks already queued), then shuffle."""
+        tracks = self.tidal.expand_tracks(selector, limit=FAVORITES_LIMIT)
+        if not tracks:
+            raise LookupError(f"Nothing to queue for {selector!r}")
+        known = {str(item.get("id")) for item in self.play_queue.items}
+        items = [self._payload(track) for track in tracks if str(track.id) not in known]
+        was_empty = not self.play_queue.items
+        for item in items:
+            self.play_queue.append(item)
+        self.shuffle_on = True
+        if was_empty:
+            # Append left index at 0; rewind it so the whole list is shuffled
+            # and playback starts on a random track.
+            self.play_queue.index = -1
+        self.play_queue.shuffle_remaining()
+        playing = False
+        try:
+            playing = self.mpv.status()["state"] in {"playing", "paused"}
+        except PlayerUnavailable:
+            playing = False
+        if was_empty and not playing:
+            result = self._play_index(0)
+            result["added"] = len(items)
+            result["shuffle"] = True
+            return result
+        return self.status() | {"added": len(items), "length": len(self.play_queue.items)}
 
     def set_favorite(self, enabled: bool | None = None) -> dict[str, Any]:
         track_id = str((self.track or {}).get("id") or "")

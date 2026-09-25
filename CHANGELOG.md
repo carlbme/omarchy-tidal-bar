@@ -4,6 +4,10 @@
 
 ### Added
 
+- `shuffle <selector>`: queues the selector (skipping tracks already queued),
+  turns shuffle on, and starts from a random track when the queue was empty.
+- Bar plugin: clicking Shuffle while the favorites list is open queues all
+  favorites, starts playback shuffled, and switches to the queue view.
 - Two-phase login: `login start` prints/opens the TIDAL URL and stores the
   pending PKCE state; `login finish --redirect <oops-page-url>` completes the
   flow. Bare `login` still runs the original blocking terminal flow.

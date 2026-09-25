@@ -289,14 +289,27 @@ def cmd_toggle(args: argparse.Namespace) -> int:
 
 
 def cmd_shuffle(args: argparse.Namespace) -> int:
+    tokens = list(args.selector or [])
+    enabled: bool | None = None
+    if tokens and tokens[0] in ("on", "off"):
+        enabled = tokens[0] == "on"
+        tokens = tokens[1:]
     params: dict[str, object] = {}
-    if args.state == "on":
-        params["enabled"] = True
-    elif args.state == "off":
-        params["enabled"] = False
+    if enabled is not None:
+        params["enabled"] = enabled
+    selector = " ".join(tokens)
+    if selector:
+        params["selector"] = selector
     payload = request("shuffle", params, start=True)
     if args.json:
         _emit(payload)
+        return 0
+    if selector:
+        added = payload.get("added")
+        if isinstance(added, int) and added > 0:
+            print(f"Queued {added} track{'s' if added != 1 else ''} and shuffled.")
+        else:
+            print("Already in queue; shuffled.")
     else:
         print("shuffle on." if payload.get("shuffle") else "shuffle off.")
     return 0
@@ -433,8 +446,15 @@ def build_parser() -> argparse.ArgumentParser:
     toggle.add_argument("--json", action="store_true")
     toggle.set_defaults(func=cmd_toggle)
 
-    shuffle = commands.add_parser("shuffle", help="Shuffle remaining queued tracks")
-    shuffle.add_argument("state", nargs="?", choices=["on", "off"])
+    shuffle = commands.add_parser(
+        "shuffle",
+        help="Toggle shuffle on or off; with a selector, queue it first, then shuffle",
+    )
+    shuffle.add_argument(
+        "selector",
+        nargs="*",
+        help="'on'/'off', or a selector (e.g. favs) to queue before shuffling",
+    )
     shuffle.add_argument("--json", action="store_true")
     shuffle.set_defaults(func=cmd_shuffle)
 

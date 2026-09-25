@@ -72,7 +72,8 @@ Implemented (including uncommitted tree):
   expand, artwork URLs. Radio replenishes the queue.
 - MPRIS `org.mpris.MediaPlayer2.otidal`.
 - Commands: `login` (`start`/`finish`), `logout`, `search`, `favs`, `play`,
-  `queue`, `radio`, `next`, `prev`, `jump`, `toggle`, `stop`, `shuffle`,
+  `queue`, `radio`, `next`, `prev`, `jump`, `toggle`, `stop`, `shuffle`
+  (optionally `shuffle <selector>`: queue it first, then shuffle),
   `favorite`, `remove`, `status`, `quit`, `doctor`, `daemon`. Versioned JSON
   output for Shell integration. `status` carries `logged_in` (CLI-side, works
   with the daemon stopped).
